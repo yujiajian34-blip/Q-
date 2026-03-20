@@ -16,6 +16,9 @@
 
 ### 方式一：直接运行 EXE（推荐）
 
+通过网盘分享的文件：Q宠桌面宠物-可运行版.zip
+链接: https://pan.baidu.com/s/1HuEu9ORnKFomdlBtiVN8Rg?pwd=mjvs 提取码: mjvs
+
 1. 双击 `Q宠桌面宠物.exe` 即可运行
 2. 右键点击宠物打开菜单
 
