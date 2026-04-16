@@ -85,7 +85,7 @@ class DiaryNotebookWindow(QWidget):
         left_layout.addWidget(QLabel("📅 选择日期"))
         
         self.calendar = QCalendarWidget()
-        self.calendar.setDate(self.current_date)
+        self.calendar.setSelectedDate(self.current_date)
         self.calendar.clicked.connect(self.on_date_selected)
         left_layout.addWidget(self.calendar)
         
@@ -217,21 +217,21 @@ class DiaryNotebookWindow(QWidget):
     def show_prev_day(self):
         """显示前一天"""
         self.current_date = self.current_date.addDays(-1)
-        self.calendar.setDate(self.current_date)
+        self.calendar.setSelectedDate(self.current_date)
         self.update_date_label()
         self.load_diary()
     
     def show_next_day(self):
         """显示后一天"""
         self.current_date = self.current_date.addDays(1)
-        self.calendar.setDate(self.current_date)
+        self.calendar.setSelectedDate(self.current_date)
         self.update_date_label()
         self.load_diary()
     
     def show_today(self):
         """显示今天"""
         self.current_date = QDate.currentDate()
-        self.calendar.setDate(self.current_date)
+        self.calendar.setSelectedDate(self.current_date)
         self.update_date_label()
         self.load_diary()
     

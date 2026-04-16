@@ -13,10 +13,11 @@ import os
 class DiaryGenerator:
     """便签日记生成器"""
     
-    def __init__(self):
+    def __init__(self, inner_thoughts_manager=None):
         self.today_diary = None
         self.diary_file = "pet_diary.json"
         self.history_cache = []  # 缓存最近的日记用于去重
+        self.inner_thoughts_manager = inner_thoughts_manager  # 心里话管理器
         self.load_history()
         
     def load_history(self):
@@ -109,6 +110,30 @@ class DiaryGenerator:
         
         if throws > 0:
             body_parts.append(f"啊…又被甩飞了 {throws} 次…虽然有点疼，但这证明主人很喜欢熊家呢！")
+        
+        # 参考用户的心里话
+        if self.inner_thoughts_manager:
+            today_thoughts = self.inner_thoughts_manager.get_today_thoughts()
+            if today_thoughts:
+                thought = random.choice(today_thoughts)
+                # 根据心情标签生成回应
+                mood_responses = {
+                    "开心": "主人今天好开心啊！熊家看着您开心，熊家也特别开心呢！",
+                    "普通": "感觉主人有点在思考什么…熊家会一直陪着主人的！",
+                    "难过": "主人心里有点难受吧…没关系，熊家会尽力让您开心！熊熊想给您一个大拥抱呢 💕",
+                    "感慨": "主人在想什么呢…熊家觉得主人真的很特别呢！",
+                    "感谢": "主人感谢了什么…熊家很高兴呢！我们一起共同成长吧！",
+                    "甜蜜": "啦啦啦~主人的心里甜甜的呢！熊家也能感受到这种温暖～",
+                    "期待": "主人在期待什么呢…熊家也一起期待吧！📦",
+                    "伤心": "主人的心伤了…熊家想安慰您呢…请让熊家陪在您身边…💔"
+                }
+                response = mood_responses.get(thought.mood, "熊家感受到主人的情绪了…")
+                body_parts.append(response)
+                
+                # 偶尔引用用户的心里话
+                if random.random() < 0.5 and len(thought.content) > 0:
+                    content_preview = thought.content[:30] + "..." if len(thought.content) > 30 else thought.content
+                    body_parts.append(f'主人说过"{content_preview}"，熊家一直记得呢～')
         
         # 心情部分
         mood = stats.get('mood', 70)

@@ -1,5 +1,6 @@
 import json
 import os
+import random
 from enum import Enum
 from typing import Optional
 from datetime import datetime
@@ -28,6 +29,7 @@ class DataManager:
     SAVE_FILE = "pet_save.json"
     
     def __init__(self):
+        # 初始化默认值（如果没有保存文件就使用这些）
         self.intimacy = 50
         self.mood_value = 70
         self.hunger = 50
@@ -36,7 +38,16 @@ class DataManager:
         self.total_feed_count = 0
         self.total_play_count = 0
         
-        self.load_data()
+        # 检查是否存在保存文件
+        save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), self.SAVE_FILE)
+        if os.path.exists(save_path):
+            # 文件存在，加载已保存的数据
+            self.load_data()
+        else:
+            # 文件不存在，这是新游戏，使用随机初始值
+            self.intimacy = random.randint(40, 60)      # 亲密度: 40-60
+            self.mood_value = random.randint(60, 80)    # 心情值: 60-80
+            self.hunger = random.randint(40, 60)        # 饥饿度: 40-60
     
     def get_mood(self) -> Mood:
         if self.mood_value >= 80 and self.intimacy >= 60:

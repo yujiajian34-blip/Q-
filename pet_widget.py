@@ -13,6 +13,8 @@ from audio_manager import play_sound
 from bubble_manager import BubbleManager
 from diary_generator import DiaryGenerator
 from diary_notebook_window import DiaryNotebookWindow
+from inner_thoughts import InnerThoughtsManager
+from inner_thoughts_window import InnerThoughtsWindow
 
 class SpeechBubble(QWidget):
     def __init__(self, parent=None):
@@ -79,6 +81,7 @@ class PetWidget(QWidget):
         super().__init__()
         self.data_manager = DataManager()
         self.diary_manager = DiaryManager()
+        self.diary_window = None
         self.diary_notebook_window = None
         self.state_manager = StateManager()
         self.movie = None
@@ -91,7 +94,12 @@ class PetWidget(QWidget):
         
         # 新增：思维气泡管理系统
         self.bubble_manager = BubbleManager()
-        self.diary_generator = DiaryGenerator()
+        
+        # 新增：心里话管理系统
+        self.inner_thoughts_manager = InnerThoughtsManager()
+        self.inner_thoughts_window = None
+        
+        self.diary_generator = DiaryGenerator(self.inner_thoughts_manager)
         
         self.idle_timer = QTimer(self)
         self.idle_timer.timeout.connect(self.on_idle_timer)
@@ -563,7 +571,8 @@ class PetWidget(QWidget):
         bully_action = menu.addAction("👊 欺负布布")
         menu.addSeparator()
         
-        diary_action = menu.addAction("� 查看熊家的日记本")
+        diary_action = menu.addAction("📖 查看熊家的日记本")
+        thoughts_action = menu.addAction("💭 说说心里话")
         
         autostart_text = "🚀 取消开机启动" if self.is_autostart_enabled() else "🚀 开机自动启动"
         autostart_action = menu.addAction(autostart_text)
@@ -596,6 +605,8 @@ class PetWidget(QWidget):
             self.do_bully_bubu()
         elif action == diary_action:
             self.show_diary_notebook()
+        elif action == thoughts_action:
+            self.show_inner_thoughts_window()
         elif action == autostart_action:
             self.toggle_autostart()
         elif action == top_action:
@@ -815,13 +826,36 @@ class PetWidget(QWidget):
             traceback.print_exc()
             self.show_bubble("打开日记本失败...", 2000)
     
+    def show_inner_thoughts_window(self):
+        """显示心里话编辑窗口"""
+        try:
+            if self.inner_thoughts_window is None or not self.inner_thoughts_window.isVisible():
+                self.inner_thoughts_window = InnerThoughtsWindow(self.inner_thoughts_manager)
+                self.inner_thoughts_window.show()
+                self.inner_thoughts_window.raise_()
+                self.inner_thoughts_window.activateWindow()
+                print("✅ 心里话窗口已打开")
+            else:
+                self.inner_thoughts_window.raise_()
+                self.inner_thoughts_window.activateWindow()
+                print("✅ 心里话窗口已激活")
+        except Exception as e:
+            print(f"❌ 打开心里话窗口出错: {e}")
+            import traceback
+            traceback.print_exc()
+            self.show_bubble("打开心里话失败...", 2000)
+    
     def closeEvent(self, event):
         """窗口关闭事件"""
         self.data_manager.save_data()
         if self.speech_bubble:
             self.speech_bubble.close()
-        if self.diary_window and self.diary_window.isVisible():
+        if hasattr(self, 'diary_window') and self.diary_window and self.diary_window.isVisible():
             self.diary_window.close()
+        if hasattr(self, 'diary_notebook_window') and self.diary_notebook_window and self.diary_notebook_window.isVisible():
+            self.diary_notebook_window.close()
+        if hasattr(self, 'inner_thoughts_window') and self.inner_thoughts_window and self.inner_thoughts_window.isVisible():
+            self.inner_thoughts_window.close()
         super().closeEvent(event)
         # 因为设置了 setQuitOnLastWindowClosed(False)，需要手动退出
         QApplication.quit()
