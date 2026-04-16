@@ -2,11 +2,17 @@ import os
 import random
 import sys
 import winreg
-from PyQt5.QtWidgets import QWidget, QMenu, QLabel, QGraphicsOpacityEffect
+from PyQt5.QtWidgets import QWidget, QMenu, QLabel, QGraphicsOpacityEffect, QApplication
 from PyQt5.QtGui import QMovie, QPainter, QPixmap, QFont, QColor
 from PyQt5.QtCore import Qt, QPoint, QTimer, QSize, QPropertyAnimation, QRect, QEasingCurve
 from state_manager import StateManager, PetState
 from data_manager import DataManager, Mood, FOODS
+from diary_manager import DiaryManager
+from diary_window import DiaryWindow
+from audio_manager import play_sound
+from bubble_manager import BubbleManager
+from diary_generator import DiaryGenerator
+from diary_notebook_window import DiaryNotebookWindow
 
 class SpeechBubble(QWidget):
     def __init__(self, parent=None):
@@ -72,6 +78,8 @@ class PetWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.data_manager = DataManager()
+        self.diary_manager = DiaryManager()
+        self.diary_notebook_window = None
         self.state_manager = StateManager()
         self.movie = None
         self.current_animation = None
@@ -80,6 +88,10 @@ class PetWidget(QWidget):
         self.stay_on_top = True
         self.original_size = QSize()
         self.is_hungry = False
+        
+        # 新增：思维气泡管理系统
+        self.bubble_manager = BubbleManager()
+        self.diary_generator = DiaryGenerator()
         
         self.idle_timer = QTimer(self)
         self.idle_timer.timeout.connect(self.on_idle_timer)
@@ -91,6 +103,11 @@ class PetWidget(QWidget):
         self.speech_timer = QTimer(self)
         self.speech_timer.timeout.connect(self.show_random_speech)
         self.speech_timer.start(random.randint(30000, 60000))
+        
+        # 思维气泡定时器（90-240秒显示一次）
+        self.thinking_bubble_timer = QTimer(self)
+        self.thinking_bubble_timer.timeout.connect(self.show_thinking_bubble)
+        self.thinking_bubble_timer.start(random.randint(90000, 240000))
         
         self.animation_queue = []
         
@@ -110,6 +127,16 @@ class PetWidget(QWidget):
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMouseTracking(True)
+        
+        # 设置初始窗口大小（临时，会被第一个动画覆盖）
+        self.setFixedSize(200, 200)
+        
+        # 设置初始位置（屏幕右下方）
+        screen = self.screen().availableGeometry()
+        x = screen.right() - 250
+        y = screen.bottom() - 250
+        self.move(x, y)
+        
         self.show()
     
     def setup_callbacks(self):
@@ -188,6 +215,18 @@ class PetWidget(QWidget):
     def update_bubble_position(self):
         self.speech_bubble.update_position(self.pos(), self.size())
     
+    def show_thinking_bubble(self):
+        """显示思维气泡（随机想法）"""
+        if random.random() < 0.3:  # 30% 概率显示
+            bubble = self.bubble_manager.get_bubble()
+            if bubble:
+                duration = self.bubble_manager.get_bubble_duration(bubble)
+                self.show_bubble(bubble, duration)
+        
+        # 重新启动定时器
+        self.thinking_bubble_timer.stop()
+        self.thinking_bubble_timer.start(random.randint(90000, 240000))
+    
     def show_random_speech(self):
         self.speech_timer.stop()
         
@@ -208,6 +247,9 @@ class PetWidget(QWidget):
                     "好开心呀！",
                     "想出去玩！"
                 ]
+                # 心情很好时，有30%概率播放高兴音效（不要太频繁）
+                if random.random() < 0.3:
+                    play_sound('happy')  # 今天心情超级好哒.wav
             elif mood == Mood.SAD:
                 texts = [
                     "有点难过...",
@@ -521,6 +563,8 @@ class PetWidget(QWidget):
         bully_action = menu.addAction("👊 欺负布布")
         menu.addSeparator()
         
+        diary_action = menu.addAction("� 查看熊家的日记本")
+        
         autostart_text = "🚀 取消开机启动" if self.is_autostart_enabled() else "🚀 开机自动启动"
         autostart_action = menu.addAction(autostart_text)
         
@@ -550,6 +594,8 @@ class PetWidget(QWidget):
             self.do_play_with_bubu()
         elif action == bully_action:
             self.do_bully_bubu()
+        elif action == diary_action:
+            self.show_diary_notebook()
         elif action == autostart_action:
             self.toggle_autostart()
         elif action == top_action:
@@ -575,96 +621,142 @@ class PetWidget(QWidget):
         food = FOODS.get(food_key)
         if food:
             self.idle_timer.stop()
+            play_sound('feed')
             self.data_manager.feed(food)
             self.update_mood()
             self.check_hunger_state()
             self.data_manager.save_data()
+            self.diary_manager.add_event(f"🍴 喂食 - {food.display_name}（亲密度+{food.intimacy}）")
             self.state_manager.set_state(PetState.FEED)
             self.load_animation(food_key, loop=False)
+            
+            # 当饥饿度很低时播放满足音效
+            if self.data_manager.hunger < 20:
+                play_sound('feed_satisfied')
+            
             self.show_bubble(f"好吃！谢谢主人~", 2000)
     
     def do_bath(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(10)
+        play_sound('bath')
+        # 心情增加: 8-12（原来是10）
+        self.data_manager.add_mood(random.randint(8, 12))
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("🛁 洗澡（心情+8~12）")
         self.state_manager.set_state(PetState.BATH)
         self.play_state_animation()
         self.show_bubble("洗香香~", 2000)
     
     def do_sing(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(5)
-        self.data_manager.add_intimacy(3)
+        play_sound('sing')
+        # 心情增加: 3-7（原来是5），亲密度增加: 1-5（原来是3）
+        self.data_manager.add_mood(random.randint(3, 7))
+        self.data_manager.add_intimacy(random.randint(1, 5))
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("🎵 唱歌（心情+3~7，亲密度+1~5）")
         self.state_manager.set_state(PetState.SING)
         self.play_state_animation()
         self.show_bubble("啦啦啦~", 2000)
     
     def do_exercise(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(8)
-        self.data_manager.add_intimacy(2)
+        play_sound('exercise')
+        # 心情增加: 6-10（原来是8），亲密度增加: 0-4（原来是2）
+        self.data_manager.add_mood(random.randint(6, 10))
+        self.data_manager.add_intimacy(random.randint(0, 4))
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("💃 运动（心情+6~10，亲密度+0~4）")
         self.state_manager.set_state(PetState.EXERCISE)
         self.play_state_animation()
         self.show_bubble("动起来！", 2000)
     
     def do_greeting(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(5)
-        self.data_manager.add_intimacy(5)
+        play_sound('greet')
+        # 心情增加: 3-7（原来是5），亲密度增加: 3-7（原来是5）
+        self.data_manager.add_mood(random.randint(3, 7))
+        self.data_manager.add_intimacy(random.randint(3, 7))
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("🌞 问候（心情+3~7，亲密度+3~7）")
         self.state_manager.set_state(PetState.GREETING)
         self.play_state_animation()
         self.show_bubble("主人好呀~", 2000)
     
     def do_interact(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(10)
-        self.data_manager.add_intimacy(8)
+        play_sound('play')
+        # 心情增加: 8-12（原来是10），亲密度增加: 6-10（原来是8）
+        self.data_manager.add_mood(random.randint(8, 12))
+        self.data_manager.add_intimacy(random.randint(6, 10))
         self.data_manager.total_play_count += 1
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("🤝 互动（心情+8~12，亲密度+6~10）")
         self.state_manager.set_state(PetState.INTERACT)
         self.play_state_animation()
         self.show_bubble("和主人玩真开心！", 2000)
     
     def do_expression(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(5)
-        self.data_manager.add_intimacy(5)
+        play_sound('love')
+        # 心情增加: 3-7（原来是5），亲密度增加: 3-7（原来是5）
+        self.data_manager.add_mood(random.randint(3, 7))
+        self.data_manager.add_intimacy(random.randint(3, 7))
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("💕 表情（心情+3~7，亲密度+3~7）")
         self.state_manager.set_state(PetState.EXPRESSION)
         self.play_state_animation()
         self.show_bubble("爱你哦~", 2000)
     
     def do_emotion(self):
         self.idle_timer.stop()
+        
+        # 获取动画并根据动画类型播放对应的音效
+        animation = self.state_manager.get_random_emotion_animation()
+        
+        if "哭唧唧" in animation:
+            # 哭唧唧时播放难过音效
+            play_sound('sad')  # 熊家有点难过.wav
+            bubble_text = "呜呜呜..."
+        elif "生气" in animation:
+            # 生气时播放生气音效
+            play_sound('angry')  # 哼，熊家生气了.wav
+            bubble_text = "哼！生气了！"
+        else:
+            bubble_text = "呜呜呜..."
+        
         self.state_manager.set_state(PetState.EMOTION)
         self.play_state_animation()
-        self.show_bubble("呜呜呜...", 2000)
+        self.show_bubble(bubble_text, 2000)
     
     def do_play_with_bubu(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(8)
-        self.data_manager.add_intimacy(6)
+        play_sound('praise')  # 使用praise作为布布的额外反馈
+        # 心情增加: 6-10（原来是8），亲密度增加: 4-8（原来是6）
+        self.data_manager.add_mood(random.randint(6, 10))
+        self.data_manager.add_intimacy(random.randint(4, 8))
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("🐻 和布布玩（心情+6~10，亲密度+4~8）")
         self.state_manager.set_state(PetState.PLAY_WITH_BUBU)
         self.play_state_animation()
         self.show_bubble("布布最好了~", 2000)
     
     def do_bully_bubu(self):
         self.idle_timer.stop()
-        self.data_manager.add_mood(-5)
-        self.data_manager.add_intimacy(-3)
+        play_sound('tease')
+        # 心情下降: -7到-3（原来是-5），亲密度下降: -5到-1（原来是-3）
+        self.data_manager.add_mood(random.randint(-7, -3))
+        self.data_manager.add_intimacy(random.randint(-5, -1))
         self.update_mood()
         self.data_manager.save_data()
+        self.diary_manager.add_event("👊 欺负布布（心情-7~-3，亲密度-5~-1）")
         self.state_manager.set_state(PetState.BULLY_BUBU)
         self.play_state_animation()
         self.show_bubble("哼！布布坏！", 2000)
@@ -685,7 +777,51 @@ class PetWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.show()
     
+    def show_diary_window(self):
+        """显示日记窗口"""
+        try:
+            if self.diary_window is None or not self.diary_window.isVisible():
+                self.diary_window = DiaryWindow(self.diary_manager)
+                self.diary_window.show()
+                self.diary_window.raise_()
+                self.diary_window.activateWindow()
+                print("✅ 日记窗口已打开")
+            else:
+                self.diary_window.raise_()
+                self.diary_window.activateWindow()
+                print("✅ 日记窗口已激活")
+        except Exception as e:
+            print(f"❌ 打开日记窗口出错: {e}")
+            import traceback
+            traceback.print_exc()
+            self.show_bubble("打开日记失败...", 2000)
+    
+    def show_diary_notebook(self):
+        """显示熊家的日记本（新便签风格  日历）"""
+        try:
+            if self.diary_notebook_window is None or not self.diary_notebook_window.isVisible():
+                self.diary_notebook_window = DiaryNotebookWindow(self.diary_generator)
+                self.diary_notebook_window.show()
+                self.diary_notebook_window.raise_()
+                self.diary_notebook_window.activateWindow()
+                print("✅ 熊家的日记本已打开")
+            else:
+                self.diary_notebook_window.raise_()
+                self.diary_notebook_window.activateWindow()
+                print("✅ 熊家的日记本已激活")
+        except Exception as e:
+            print(f"❌ 打开日记本出错: {e}")
+            import traceback
+            traceback.print_exc()
+            self.show_bubble("打开日记本失败...", 2000)
+    
     def closeEvent(self, event):
+        """窗口关闭事件"""
         self.data_manager.save_data()
-        self.speech_bubble.close()
+        if self.speech_bubble:
+            self.speech_bubble.close()
+        if self.diary_window and self.diary_window.isVisible():
+            self.diary_window.close()
         super().closeEvent(event)
+        # 因为设置了 setQuitOnLastWindowClosed(False)，需要手动退出
+        QApplication.quit()
